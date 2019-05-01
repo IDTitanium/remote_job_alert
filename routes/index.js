@@ -9,6 +9,7 @@ const Paystack = require("../controllers/paystack");
 var Admin = require("../models/admin");
 var JobModel = require("../models/jobs");
 const Applicant = require("../controllers/applicant");
+const passport = require('passport');
 /* GET home page. */
 //router.get("/", Home.index);
 router.get("/", function(req, res, next) {
@@ -150,11 +151,46 @@ router.post("/contact", UserController.sendContactAlert);
 // // POST Job alerts subscription
 // router.post('/subscribe', Jobs.jobAlertSubscription);
 
-// router.get('/remote-jobs', Jobs.get_all)
-// router.post('/remote-jobs', Jobs.create);
-// router.get('/remote-jobs/:job_id', Jobs.get_one);
-// router.get('/remote-jobs/:job_id', Jobs.edit);
-// router.get('/remote-jobs/:job_id', Jobs.update_job);
-// router.get('/remote-jobs/:job_id', Jobs.cancel_job);
+/*FACEBOOK AUTH*/
+// GET Social Auth Page
+router.get("/auth", function (req, res, next){ 
+  res.status(200).render('auth') 
+});
+
+
+router.get('/profile', isLoggedIn, function(req, res) {
+        res.render('profile.hbs', {
+            user : req.user // get the user out of session and pass to template
+        });
+    });
+
+// route for facebook authentication and login
+  router.get('/auth/facebook', passport.authenticate('facebook', { 
+      scope : ['public_profile', 'email']
+    }));
+
+    // handle the callback after facebook has authenticated the user
+  router.get('/auth/facebook/callback',
+        passport.authenticate('facebook', {
+            successRedirect : '/profile',
+            failureRedirect : '/auth'
+        }));
+
+    // route for logging out
+  router.get('/logout', function(req, res) {
+        req.logout();
+        res.redirect('/auth');
+    });
+
+// route middleware to make sure a user is logged in
+function isLoggedIn(req, res, next) {
+
+    // if user is authenticated in the session, carry on
+    if (req.isAuthenticated())
+        return next();
+
+    // if they aren't redirect them to the auth page
+    res.redirect('/auth');
+}
 
 module.exports = router;
