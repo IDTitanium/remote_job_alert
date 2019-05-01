@@ -10,6 +10,7 @@ var Admin = require("../models/admin");
 var JobModel = require("../models/jobs");
 const Applicant = require("../controllers/applicant");
 const passport = require('passport');
+let url = require('url');
 /* GET home page. */
 //router.get("/", Home.index);
 router.get("/", function(req, res, next) {
@@ -152,20 +153,27 @@ router.post("/contact", UserController.sendContactAlert);
 // router.post('/subscribe', Jobs.jobAlertSubscription);
 
 /*FACEBOOK AUTH*/
+
+const storeRedirectToInSession = (req, res, next) => {
+  let url_parts = url.parse(req.get("referer"));
+  const redirectTo = url_parts.pathname;
+  req.session.redirectTo = redirectTo;
+  next();
+};
+
+
 // GET Social Auth Page
 router.get("/auth", function (req, res, next){ 
   res.status(200).render('auth') 
 });
 
 
-router.get('/profile', isLoggedIn, function(req, res) {
-        res.render('profile.hbs', {
-            user : req.user // get the user out of session and pass to template
-        });
-    });
+
 
 // route for facebook authentication and login
-  router.get('/auth/facebook', passport.authenticate('facebook', { 
+  router.get('/auth/facebook', 
+  		storeRedirectToInSession,
+  	passport.authenticate('facebook', { 
       scope : ['public_profile', 'email']
     }));
 
@@ -174,12 +182,22 @@ router.get('/profile', isLoggedIn, function(req, res) {
         passport.authenticate('facebook', {
             successRedirect : '/profile',
             failureRedirect : '/auth'
-        }));
+
+        }),
+        (req, res) => {
+        	res.redirect(req.session.redirectTo);
+        }
+
+        );
 
     // route for logging out
   router.get('/logout', function(req, res) {
         req.logout();
         res.redirect('/auth');
+    });
+
+ router.get('/profile', isLoggedIn, function(req, res) {
+        res.render('profile.hbs');
     });
 
 // route middleware to make sure a user is logged in

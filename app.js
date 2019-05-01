@@ -42,6 +42,8 @@ app.engine('.hbs', exphbs({ defaultLayout: 'main', extname: '.hbs' }));
 
 app.set('view engine', 'hbs');
 
+app.use(passport.initialize());
+app.use(passport.session());
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -72,7 +74,6 @@ app.use(function(req, res, next) {
 app.use('/', indexRouter);
 // app.use('/users', usersRouter);
 
-app.use(passport.initialize());
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
