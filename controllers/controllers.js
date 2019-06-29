@@ -15,9 +15,17 @@ const paymentModel = require("../models/payment");
 const Paystack = require('./paystack');
 const session = require('./stripe');
 const Applicant = require('./applicant');
+const DOMParser = require("xmldom");
 
 // Null placeholder till promise returns a value
 var remote_jobs = null;
+
+// extract url from html
+function urlify(text) {
+  var urlRegex = /(\"https?:\/\/[^\s]+)\"/;
+  result = text.match(urlRegex)[0];
+  return result.substring(1, result.length-1);
+}
 
 // trick function to store Promise value
 function load_data(data) {
@@ -28,17 +36,22 @@ function load_data(data) {
 function slugify(element) {
   let title = element.title;
   let company = element.company;
-  let urlOne = title + ' ' + company;
-  let regex = /[\.\ \]\[\(\)\!\,\<\>\`\~\{\}\?\/\\\"\:\'\|\@\%\&\*]/g;
-  let urlTwo = urlOne.trim();
-  let urlThree = urlTwo.split(' ');
-  urlThree.forEach(index => {
-    index.trim();
-  });
-  let url = urlThree.join('-')
-  let custom_url = url.toLowerCase().replace(regex, '');
+  let regex = /[\.\-\]\[\(\)\!\,\<\>\`\~\{\}\?\/\\\"\:\'\|\@\%\&\*]/g;
+  let urlOne = title.toLowerCase().trim().replace(regex, '').split(' ');
+  let urlTwo = company.toLowerCase().trim().replace(regex, '').split(' ');
+  let custom_url = urlOne.join('-') + '-' + urlTwo.join('-')
 
   return custom_url
+}
+
+function createLink(element) {
+  //Creates a single, clickable link for the job
+  // let applyText = element.how_to_apply;
+  let parser = DOMParser.DOMParser;
+  let applyText = new parser().parseFromString(element.how_to_apply,"text/xml");
+  let link = String(applyText.firstChild.getElementsByTagName('a'));
+
+  return link;
 }
 
 // Get all the data
@@ -50,6 +63,7 @@ const getData = async () => {
     // Parse and produce unique slug -- custom-url
     json.forEach(element => {
       element.custom_url = slugify(element);
+      // element.apply_link = createLink(element);
     });
 
     // sneak and load up our global variable
@@ -336,6 +350,63 @@ const Jobs = {
     }
   },
 
+  async fetchHomeJobs(req, res) {
+    //There should be a function for getting latest jobs
+    //There should be a function for getting number of jobs per stack and an object oriented array that does the mapping
+    //
+    let main = JSON.parse(JSON.stringify(remote_jobs));
+
+    //Ensure only jobs with images are displayed on the homepage
+    let newMain = [];
+
+    main.forEach(job => {
+      if (job.company_logo !== null && job.company_logo !== "") {
+        newMain.push(job);
+      }
+      
+    });
+
+    //Latest jobs, taken by removing the latest six from the json
+    let latestJobs = newMain.slice(0,6);
+
+    // calculate date difference
+    let eachday = 24 * 60 * 60 * 1000;
+    latestJobs = latestJobs.map(x=>{
+      created_at = new Date(x.created_at)
+      today = new Date()
+      var daysElapsed = Math.round(Math.abs((created_at.getTime() - today.getTime()) / (eachday)));
+      x.created_at = daysElapsed;
+      return x;
+    })
+    const stripeSession = await session;
+
+    //Array of the stacks to be used and the links to their images
+    let stackJobs = [{"tech":"python","logo":'https://img.icons8.com/color/50/python.svg'},{"tech":'javascript',"logo":'https://img.icons8.com/color/50/javascript.svg'},{"tech":"php","logo":'https://img.icons8.com/dusk/50/000000/php-logo.png'},{"tech":'ios',"logo":'https://img.icons8.com/color/50/ios-logo.svg'},{"tech":'c++',"logo":'https://img.icons8.com/color/50/000000/c-plus-plus-logo.png'},{"tech":'react',"logo":'https://img.icons8.com/ios/50/000000/react-native-filled.png'}];
+
+    let allTechJobs = [[],[],[],[],[],[]];
+  
+    stackJobs.forEach(element => {
+      stackJobs[stackJobs.indexOf(element)].count = searchTech(element.tech,main,allTechJobs[stackJobs.indexOf(element)]).length;
+      if (element.tech.length == 3) {
+        stackJobs[stackJobs.indexOf(element)].formalName = element.tech.toUpperCase();
+      }
+      else {
+        stackJobs[stackJobs.indexOf(element)].formalName = element.tech.charAt(0).toUpperCase() + element.tech.slice(1);
+      } 
+    });
+
+    
+    //It goes something like this: allTechJobs[tech] = searchTech()
+    //Then I can do something like for number of java jobs I have allTechJobs[java].length 
+
+    return res.status(200).render('index', {
+      stackJobs : stackJobs,
+      latestJobs: latestJobs,
+      sessionId: stripeSession.id,
+      user: (typeof req.session.user == 'undefined') ? null : req.session.user,
+    })
+  },
+
   async fetchSingle(req, res) {
 
     let slug = req.params.slug
@@ -343,15 +414,22 @@ const Jobs = {
     let main = JSON.parse(JSON.stringify(remote_jobs));
 
     //Array containing potential slugs
-    let techs = ['python','php','javascript','java','ios','devops','c++','node','asp','react','android','linux'];
+    let techs = ['python','php','javascript','java','ios','devops','c++','node','asp','react','android','linux','sql','ruby'];
     let categories = ['full-time','part-time','contract'];
 
     //Check for the type of the param being passed, a tech, a category or a custom URL
       if(techs.includes(slug)) {
         try {
           let tech = slug;
-          // let allStackJobs = [];
-          let formalTech = tech.charAt(0).toUpperCase() + tech.slice(1);
+          let formalTech = "";
+      
+          //For proper rendering of PHP, IOS and SQL jobs. Basically all jobs with three letters
+          if (tech.length == 3) {
+            formalTech = tech.toUpperCase();
+          }
+          else {
+            formalTech = tech.charAt(0).toUpperCase() + tech.slice(1);
+          } 
           let allStackJobsNull = [];
           let allStackJobs = searchTech(tech, main, allStackJobsNull);
 
@@ -499,8 +577,11 @@ const Jobs = {
           // some jobs have no image
           single_job.company_logo = (!single_job.company_logo) ? "/images/no_job_image.jpg" : single_job.company_logo;
     
+          applyLink = urlify(single_job.how_to_apply)
+
           return res.status(200).render('singleJob', {
             content: single_job,
+            applyLink,
             summary: summary,
             keytech: key_tech + "...",
             title: single_job.title,
@@ -573,6 +654,7 @@ const Jobs = {
   },
 
   //Do not Touch - Used by Featured Jobs
+  //Update: I touched this and there's nothing you can do about it :)
   async create(req, res, next) {
     // // Check Validation
     // if (!isValid) {
